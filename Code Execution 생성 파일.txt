@@ -1,0 +1,71 @@
+"""
+주식 종가 데이터를 가져와서 (date, value, memo) 형태로 변환하는 스크립트
+
+[사용 방법]
+1. 가상환경에서 패키지 설치:
+   pip install yfinance pandas
+
+2. 실행:
+   python fetch_data.py
+
+3. 결과: data_samsung.json / data_apple.json 생성
+   -> 이후 Firestore 업로드에 사용
+"""
+
+import json
+import yfinance as yf
+
+
+def fetch_close_data(ticker: str, memo_label: str, period: str = "1y"):
+    """
+    특정 종목의 종가(Close)를 받아 (date, value, memo) 리스트로 변환한다.
+
+    ticker     : 종목 코드 (예: "005930.KS", "AAPL")
+    memo_label : memo에 들어갈 라벨 (예: "삼성전자 종가")
+    period     : 기간 (예: "1y" = 1년, "2y" = 2년)
+    """
+    # 1) 데이터 다운로드 (auto_adjust=True: 수정 종가 기준)
+    df = yf.download(ticker, period=period, auto_adjust=True)
+
+    if df.empty:
+        print(f"[경고] {ticker} 데이터를 가져오지 못했습니다.")
+        return []
+
+    # 2) (date, value, memo) 형태로 변환
+    records = []
+    for idx, row in df.iterrows():
+        close_price = row["Close"]
+        # 멀티컬럼일 경우(Series) 첫 값 추출
+        if hasattr(close_price, "iloc"):
+            close_price = close_price.iloc[0]
+
+        records.append({
+            "date": idx.strftime("%Y-%m-%d"),   # 날짜를 문자열로
+            "value": round(float(close_price), 2),  # 종가를 value로
+            "memo": memo_label,
+        })
+
+    print(f"[성공] {ticker}: {len(records)}개 데이터 수집")
+    return records
+
+
+def save_json(records, filename):
+    """리스트를 JSON 파일로 저장"""
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(records, f, ensure_ascii=False, indent=2)
+    print(f"  -> {filename} 저장 완료")
+
+
+if __name__ == "__main__":
+    # 삼성전자 (최소 100개 이상 확보를 위해 1년치 ≈ 약 240 거래일)
+    samsung = fetch_close_data("005930.KS", "삼성전자 종가", period="1y")
+    save_json(samsung, "data_samsung.json")
+
+    # 애플
+    apple = fetch_close_data("AAPL", "애플 종가", period="1y")
+    save_json(apple, "data_apple.json")
+
+    # 미리보기
+    print("\n[미리보기] 삼성전자 앞 3개:")
+    for r in samsung[:3]:
+        print(" ", r)
